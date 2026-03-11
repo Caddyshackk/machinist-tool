@@ -144,7 +144,16 @@ function setupEventListeners() {
     document.getElementById('loadLibraryBtn').addEventListener('click', importLibrary);
 
     // Tap size selector
-    document.getElementById('tapSize').addEventListener('change', handleTapSizeChange);
+    document.getElementById('tapSize').addEventListener('change', () => {
+        handleTapSizeChange();
+        updateTapInfo();
+    });
+    
+    // Update tap info when material or tap type changes
+    document.getElementById('workMaterial').addEventListener('change', () => {
+        if (currentMachineType === 'tap') updateTapInfo();
+    });
+    document.getElementById('tapType').addEventListener('change', updateTapInfo);
 
     // Chip load checker - update on input
     document.getElementById('chipLoad')?.addEventListener('input', updateChipLoadIndicator);
@@ -156,20 +165,38 @@ function updateUIForMachineType() {
     const latheInputs = document.getElementById('latheInputs');
     const tapInputs = document.getElementById('tapInputs');
     const tapDrillResult = document.getElementById('tapDrillResult');
+    const cycleTimeResult = document.getElementById('cycleTimeResult');
+    
+    // Elements to hide in tap mode
+    const sfmGroup = document.querySelector('.input-group.with-hint');
+    const depthOfCutGroup = document.getElementById('depthOfCutGroup');
+    const widthOfCutGroup = document.getElementById('widthOfCutGroup');
 
     // Hide all first
     millDrillInputs.style.display = 'none';
     latheInputs.style.display = 'none';
     tapInputs.style.display = 'none';
     tapDrillResult.style.display = 'none';
+    cycleTimeResult.style.display = 'none';
 
     if (currentMachineType === 'lathe') {
         latheInputs.style.display = 'block';
+        if (sfmGroup) sfmGroup.style.display = 'flex';
+        if (depthOfCutGroup) depthOfCutGroup.style.display = 'flex';
+        if (widthOfCutGroup) widthOfCutGroup.style.display = 'flex';
     } else if (currentMachineType === 'tap') {
         tapInputs.style.display = 'block';
         tapDrillResult.style.display = 'flex';
+        cycleTimeResult.style.display = 'flex';
+        // Hide SFM, DOC, WOC for tapping
+        if (sfmGroup) sfmGroup.style.display = 'none';
+        if (depthOfCutGroup) depthOfCutGroup.style.display = 'none';
+        if (widthOfCutGroup) widthOfCutGroup.style.display = 'none';
     } else {
         millDrillInputs.style.display = 'block';
+        if (sfmGroup) sfmGroup.style.display = 'flex';
+        if (depthOfCutGroup) depthOfCutGroup.style.display = 'flex';
+        if (widthOfCutGroup) widthOfCutGroup.style.display = 'flex';
         // Show chip load indicator for mill/drill
         updateChipLoadIndicator();
     }
@@ -504,15 +531,111 @@ function updateChipLoadIndicator() {
 function handleTapSizeChange() {
     const tapSizeSelect = document.getElementById('tapSize');
     const customDiameterInput = document.getElementById('customTapDiameter');
+    const customPitchInput = document.getElementById('customTapPitch');
     const tapPitchInput = document.getElementById('tapPitch');
 
     if (tapSizeSelect.value === 'custom') {
         customDiameterInput.style.display = 'block';
+        customPitchInput.style.display = 'block';
     } else {
         customDiameterInput.style.display = 'none';
+        customPitchInput.style.display = 'none';
         
         // Parse and set TPI from selection
         const [diameter, tpi] = tapSizeSelect.value.split(',');
-        tapPitchInput.value = parseFloat(tpi).toFixed(3);
+        if (tapPitchInput) {
+            tapPitchInput.value = parseFloat(tpi).toFixed(3);
+        }
     }
+}
+
+// Update Tap Info Display
+function updateTapInfo() {
+    const tapSizeSelect = document.getElementById('tapSize');
+    const workMaterial = document.getElementById('workMaterial').value;
+    const tapType = document.getElementById('tapType').value;
+    
+    let tapDiameter;
+    let tpi;
+    
+    if (tapSizeSelect.value === 'custom') {
+        tapDiameter = parseFloat(document.getElementById('tapDiameter')?.value || 0.5);
+        tpi = parseFloat(document.getElementById('tapPitch')?.value || 13);
+    } else {
+        [tapDiameter, tpi] = tapSizeSelect.value.split(',').map(parseFloat);
+    }
+    
+    // Calculate tap drill size (75% thread depth)
+    const tapDrill = tapDiameter - (1.2990 / tpi);
+    
+    // Get recommended speed based on material and tap type
+    const speedFactor = tapSpeedFactors[workMaterial][tapType];
+    const baseSFM = materialDatabase[workMaterial].carbide.sfm; // Use carbide as base
+    const recommendedSFM = Math.round(baseSFM * speedFactor);
+    
+    // Update info display
+    const tapDrillInfo = document.getElementById('tapDrillInfo');
+    const tapSpeedInfo = document.getElementById('tapSpeedInfo');
+    
+    if (tapDrillInfo) {
+        // Find closest fractional drill size
+        const drillFraction = findClosestDrill(tapDrill);
+        tapDrillInfo.textContent = `${drillFraction} (${tapDrill.toFixed(4)}")`;
+    }
+    
+    if (tapSpeedInfo) {
+        tapSpeedInfo.textContent = `${recommendedSFM} SFM`;
+    }
+}
+
+// Helper function to find closest drill size
+function findClosestDrill(decimal) {
+    // Common tap drill sizes
+    const drillSizes = {
+        0.2010: '#7',
+        0.2130: '#4',
+        0.2570: 'F',
+        0.2720: 'I',
+        0.2969: 'J',
+        0.3125: '5/16',
+        0.3320: 'Q',
+        0.3437: '11/32',
+        0.3750: '3/8',
+        0.3970: '25/64',
+        0.4219: '27/64',
+        0.4375: '7/16',
+        0.4531: '29/64',
+        0.4844: '31/64',
+        0.5156: '33/64',
+        0.5312: '17/32',
+        0.5469: '35/64',
+        0.5781: '37/64',
+        0.6094: '39/64',
+        0.6406: '41/64',
+        0.6562: '21/32',
+        0.6719: '43/64',
+        0.7031: '45/64',
+        0.7344: '47/64',
+        0.7656: '49/64',
+        0.8125: '13/16',
+        0.8438: '27/32',
+        0.8750: '7/8',
+        0.9219: '59/64',
+        0.9375: '15/16'
+    };
+    
+    let closest = 0;
+    let closestName = '';
+    let minDiff = 999;
+    
+    for (const [size, name] of Object.entries(drillSizes)) {
+        const diff = Math.abs(parseFloat(size) - decimal);
+        if (diff < minDiff) {
+            minDiff = diff;
+            closest = parseFloat(size);
+            closestName = name;
+        }
+    }
+    
+    return closestName || decimal.toFixed(4) + '"';
 }

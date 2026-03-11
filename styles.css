@@ -357,6 +357,42 @@ body {
     border: 1px solid rgba(255, 165, 2, 0.3);
 }
 
+/* Tap Info Box */
+.tap-info-box {
+    margin-top: 20px;
+    padding: 20px;
+    background: linear-gradient(135deg, rgba(46, 92, 255, 0.1), rgba(0, 217, 255, 0.05));
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+}
+
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.info-row:last-child {
+    border-bottom: none;
+}
+
+.info-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.info-value {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--bright-blue);
+}
+
 /* Input Groups */
 .input-grid {
     display: grid;
