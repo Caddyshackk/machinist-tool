@@ -251,7 +251,8 @@ function calculate() {
         // Feed Rate for tapping: IPM = RPM / TPI
         feedRate = rpm / tpi;
 
-        // Calculate tap drill size (85% thread depth)
+        // Calculate tap drill size (75% thread depth)
+        // Formula: Major Diameter - (0.9743 / TPI)
         const tapDrill = tapDiameter - (0.9743 / tpi);
         
         // Display tap drill size
@@ -285,7 +286,7 @@ function calculate() {
     // Display results
     document.getElementById('rpmResult').textContent = `${Math.round(rpm)} RPM`;
     document.getElementById('feedRateResult').textContent = `${feedRate.toFixed(2)} IPM`;
-    document.getElementById('mrrResult').textContent = currentMachineType === 'tap' ? 'N/A' : `${mrr.toFixed(3)} in³/min`;
+    document.getElementById('mrrResult').textContent = currentMachineType === 'tap' ? 'N/A' : `${mrr.toFixed(3)}`;
     document.getElementById('powerResult').textContent = currentMachineType === 'tap' ? 'N/A' : `${power.toFixed(2)} HP`;
 }
 
@@ -565,7 +566,8 @@ function updateTapInfo() {
         [tapDiameter, tpi] = tapSizeSelect.value.split(',').map(parseFloat);
     }
     
-    // Calculate tap drill size (85% thread depth)
+    // Calculate tap drill size (75% thread depth)
+    // Formula: Major Diameter - (0.9743 / TPI)
     const tapDrill = tapDiameter - (0.9743 / tpi);
     
     // Get recommended speed based on material and tap type
