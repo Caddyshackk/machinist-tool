@@ -158,6 +158,9 @@ function setupEventListeners() {
     // Chip load checker - update on input
     document.getElementById('chipLoad')?.addEventListener('input', updateChipLoadIndicator);
     document.getElementById('toolDiameter')?.addEventListener('input', updateChipLoadIndicator);
+    
+    // Feed per rev checker for lathe
+    document.getElementById('feedPerRev')?.addEventListener('input', updateFeedPerRevIndicator);
 }
 
 function updateUIForMachineType() {
@@ -184,6 +187,8 @@ function updateUIForMachineType() {
         if (sfmGroup) sfmGroup.style.display = 'flex';
         if (depthOfCutGroup) depthOfCutGroup.style.display = 'flex';
         if (widthOfCutGroup) widthOfCutGroup.style.display = 'flex';
+        // Update feed per rev indicator
+        updateFeedPerRevIndicator();
     } else if (currentMachineType === 'tap') {
         tapInputs.style.display = 'block';
         tapDrillResult.style.display = 'flex';
@@ -521,6 +526,64 @@ function updateChipLoadIndicator() {
         position = 75 + Math.min(((chipLoad - range.max) / range.max) * 25, 25); // 75-100%
         status = 'high';
         messageText = '⚠️ TOO HEAVY - Risk of tool breakage';
+    }
+
+    fill.style.width = `${position}%`;
+    message.textContent = messageText;
+    message.className = 'indicator-message status-' + status;
+}
+
+// Feed Per Rev Indicator (for Lathe)
+function updateFeedPerRevIndicator() {
+    if (currentMachineType !== 'lathe') return;
+
+    const feedPerRev = parseFloat(document.getElementById('feedPerRev').value);
+    const workMaterial = document.getElementById('workMaterial').value;
+    
+    if (!feedPerRev) return;
+
+    // Get recommended ranges from database
+    const recommended = latheFeedDatabase[workMaterial];
+    
+    // Define ranges: finishing (too light) -> roughing (good) -> too heavy
+    const ranges = {
+        min: recommended.finishing * 0.5,        // Below this is too fine
+        finishingStart: recommended.finishing,   // Start of finishing range
+        roughingStart: recommended.roughing * 0.7, // Start of roughing range  
+        optimal: recommended.roughing,           // Optimal roughing
+        max: recommended.roughing * 1.5          // Above this is too aggressive
+    };
+
+    const indicator = document.getElementById('feedPerRevStatus');
+    if (!indicator) return;
+    
+    const fill = indicator.querySelector('.indicator-fill');
+    const message = indicator.querySelector('.indicator-message');
+
+    let position;
+    let status;
+    let messageText;
+
+    if (feedPerRev < ranges.finishingStart) {
+        // Too light - excessive cycle time
+        position = (feedPerRev / ranges.finishingStart) * 25; // 0-25%
+        status = 'low';
+        messageText = '⚠️ TOO LIGHT - Very slow, excessive cycle time';
+    } else if (feedPerRev >= ranges.finishingStart && feedPerRev < ranges.roughingStart) {
+        // Finishing range
+        position = 25 + ((feedPerRev - ranges.finishingStart) / (ranges.roughingStart - ranges.finishingStart)) * 25;
+        status = 'good';
+        messageText = '✓ FINISHING - Good for smooth surface finish';
+    } else if (feedPerRev >= ranges.roughingStart && feedPerRev <= ranges.max) {
+        // Roughing range
+        position = 50 + ((feedPerRev - ranges.roughingStart) / (ranges.max - ranges.roughingStart)) * 25;
+        status = 'good';
+        messageText = '✓ ROUGHING - Good for material removal';
+    } else {
+        // Too heavy
+        position = 75 + Math.min(((feedPerRev - ranges.max) / ranges.max) * 25, 25);
+        status = 'high';
+        messageText = '⚠️ TOO HEAVY - Risk of chatter and poor finish';
     }
 
     fill.style.width = `${position}%`;
