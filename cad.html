@@ -389,7 +389,7 @@ function drawSnapIndicator(){
 }
 
 function drawPreview(){
-  if(!ts.active&&!ts.step)return;
+  if(!ts.active&&!ts.step&&!ts.cutting)return;
   const tgt=snapPt||mouse;
   ctx.save();ctx.strokeStyle='rgba(74,158,255,.45)';ctx.setLineDash([4,4]);ctx.lineWidth=1;ctx.lineCap='round';
   if(currentTool==='line'&&ts.x1!==undefined){
