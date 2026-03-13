@@ -163,6 +163,10 @@ html,body{height:100%;overflow:hidden;background:var(--bg-app);color:var(--text)
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="4" y1="18" x2="20" y2="18"/><line x1="4" y1="14" x2="4" y2="22"/><line x1="20" y1="14" x2="20" y2="22"/><line x1="12" y1="8" x2="12" y2="16"/></svg>
       <span class="ttip">Dimension (D)</span>
     </button>
+    <button class="tbtn" id="tool-trim" onclick="setTool('trim')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 5 L19 19M5 5 Q8 2 12 5 Q16 8 19 5M5 19 Q8 22 12 19"/><line x1="14" y1="14" x2="19" y2="19" stroke-dasharray="2,2"/></svg>
+      <span class="ttip">Trim (T)</span>
+    </button>
     <div class="tsep"></div>
     <button class="tbtn" onclick="deleteSelected()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
@@ -230,6 +234,10 @@ html,body{height:100%;overflow:hidden;background:var(--bg-app);color:var(--text)
   <button class="mbtn" id="mb-dimension" onclick="setTool('dimension')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="4" y1="18" x2="20" y2="18"/><line x1="4" y1="14" x2="4" y2="22"/><line x1="20" y1="14" x2="20" y2="22"/><line x1="12" y1="8" x2="12" y2="16"/></svg>
     <span>Dim</span>
+  </button>
+  <button class="mbtn" id="mb-trim" onclick="setTool('trim')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="5" y1="5" x2="19" y2="19"/><path d="M5 5 Q9 1 13 5"/><line x1="14" y1="14" x2="19" y2="19" stroke-dasharray="2,2"/></svg>
+    <span>Trim</span>
   </button>
   <button class="mbtn" onclick="toggleDrawer()">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
@@ -573,6 +581,9 @@ function toolClick(pt){
     else{saveUndo();addEnt({type:'dim',x1:ts.x1,y1:ts.y1,x2:pt.x,y2:pt.y,off:0.35});ts.active=false;hint('Tap first point');}
     return;
   }
+  if(currentTool==='trim'){
+    doTrim(pt); return;
+  }
 }
 
 function hitTest(wx,wy){const D=12/cam.zoom;for(let i=entities.length-1;i>=0;i--){if(eHit(entities[i],wx,wy,D))return entities[i];}return null;}
@@ -599,7 +610,7 @@ function setTool(n){
   ['tool-'+n,'mb-'+n].forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('active');});
   $('sttool',n.toUpperCase());
   canvas.style.cursor=n==='select'?'default':'crosshair';
-  const H={select:'Tap to select · drag to move · double-tap = zoom in',line:'Tap start point · tap end · chains automatically',circle:'Tap center · tap edge for radius',arc:'Tap center · tap start point · tap end point',rect:'Tap first corner · tap opposite corner',dimension:'Tap two points to measure'};
+  const H={select:'Tap to select · drag to move · double-tap = zoom in',line:'Tap start point · tap end · chains automatically',circle:'Tap center · tap edge for radius',arc:'Tap center · tap start point · tap end point',rect:'Tap first corner · tap opposite corner',dimension:'Tap two points to measure',trim:'Tap the segment you want to remove'};
   hint(H[n]||'');render();
 }
 function deleteSelected(){if(!selectedIds.size)return;saveUndo();entities=entities.filter(e=>!selectedIds.has(e.id));selectedIds.clear();updatePanel();render();}
@@ -648,6 +659,167 @@ function newFile(){if(entities.length&&!confirm('Start new drawing?'))return;sav
 // 🔧 Replace with your actual URL
 function openSF(e){e.preventDefault();window.location.href='https://caddyshackk.github.io/machinist-tool/index.html';}
 
+// ── TRIM ─────────────────────────────────────────────────────────
+function doTrim(pt){
+  const D=12/cam.zoom;
+  let hitEnt=null, hitParam=null;
+  for(let i=entities.length-1;i>=0;i--){
+    const e=entities[i];
+    if(e.type==='dim') continue;
+    const p=entityClickParam(e,pt.x,pt.y,D);
+    if(p!==null){hitEnt=e;hitParam=p;break;}
+  }
+  if(!hitEnt) return;
+  const others=entities.filter(e=>e.id!==hitEnt.id&&e.type!=='dim');
+  const params=collectIntersectionParams(hitEnt,others);
+  if(params.length===0){hint('No intersecting entities to trim against');return;}
+  saveUndo();
+  if(hitEnt.type==='line') trimLine(hitEnt,hitParam,params);
+  else if(hitEnt.type==='circle') trimCircle(hitEnt,hitParam,params);
+  else if(hitEnt.type==='arc') trimArc(hitEnt,hitParam,params);
+  updatePanel();render();
+}
+
+function entityClickParam(e,wx,wy,D){
+  if(e.type==='line'){
+    const dx=e.x2-e.x1,dy=e.y2-e.y1,l2=dx*dx+dy*dy;
+    if(!l2) return null;
+    const t=Math.max(0,Math.min(1,((wx-e.x1)*dx+(wy-e.y1)*dy)/l2));
+    if(Math.hypot(wx-(e.x1+t*dx),wy-(e.y1+t*dy))<D) return t;
+  } else if(e.type==='circle'){
+    if(Math.abs(Math.hypot(wx-e.cx,wy-e.cy)-e.r)<D) return Math.atan2(wy-e.cy,wx-e.cx);
+  } else if(e.type==='arc'){
+    if(Math.abs(Math.hypot(wx-e.cx,wy-e.cy)-e.r)<D){
+      const a=Math.atan2(wy-e.cy,wx-e.cx);
+      if(angleInArc(a,e.sa,e.ea)) return a;
+    }
+  }
+  return null;
+}
+
+function collectIntersectionParams(e,others){
+  const params=[];
+  for(const o of others){
+    for(const pt of intersectEntities(e,o)){
+      if(e.type==='line'){
+        const dx=e.x2-e.x1,dy=e.y2-e.y1,l2=dx*dx+dy*dy;
+        if(!l2) continue;
+        const t=((pt.x-e.x1)*dx+(pt.y-e.y1)*dy)/l2;
+        if(t>1e-6&&t<1-1e-6) params.push(t);
+      } else if(e.type==='circle'){
+        params.push(Math.atan2(pt.y-e.cy,pt.x-e.cx));
+      } else if(e.type==='arc'){
+        const a=Math.atan2(pt.y-e.cy,pt.x-e.cx);
+        if(angleInArc(a,e.sa,e.ea)) params.push(a);
+      }
+    }
+  }
+  return params;
+}
+
+function trimLine(e,clickT,params){
+  params.sort((a,b)=>a-b);
+  let lo=0,hi=1;
+  for(const t of params){ if(t<clickT) lo=t; }
+  for(const t of params){ if(t>clickT){hi=t;break;} }
+  const idx=entities.indexOf(e);
+  const newEnts=[];
+  if(lo>1e-6) newEnts.push({type:'line',x1:e.x1,y1:e.y1,x2:e.x1+(e.x2-e.x1)*lo,y2:e.y1+(e.y2-e.y1)*lo,id:nextId++});
+  if(hi<1-1e-6) newEnts.push({type:'line',x1:e.x1+(e.x2-e.x1)*hi,y1:e.y1+(e.y2-e.y1)*hi,x2:e.x2,y2:e.y2,id:nextId++});
+  entities.splice(idx,1,...newEnts);
+}
+
+function trimCircle(e,clickAngle,params){
+  if(params.length<2) return;
+  params.sort((a,b)=>a-b);
+  // Normalize clickAngle to be >= params[0]
+  let ca=clickAngle;
+  while(ca<params[0]) ca+=Math.PI*2;
+  // Find which gap the click falls in
+  let sa=params[0],ea=params[1];
+  for(let i=0;i<params.length;i++){
+    const next=i+1<params.length?params[i+1]:params[0]+Math.PI*2;
+    let lo=params[i]; while(lo<params[0]) lo+=Math.PI*2;
+    if(ca>=lo&&ca<=next){ sa=params[i]; ea=i+1<params.length?params[i+1]:params[0]; break; }
+  }
+  const idx=entities.indexOf(e);
+  // Keep the arc from ea to sa (the part NOT clicked)
+  entities.splice(idx,1,{type:'arc',cx:e.cx,cy:e.cy,r:e.r,sa:ea,ea:sa,id:nextId++});
+}
+
+function trimArc(e,clickAngle,params){
+  if(!params.length) return;
+  params.sort((a,b)=>a-b);
+  // Normalize all params relative to sa
+  let lo=e.sa,hi=e.ea;
+  for(const p of params){ if(angleInArc(p,e.sa,clickAngle)&&p!==e.sa) lo=p; }
+  for(const p of params){ if(angleInArc(p,clickAngle,e.ea)&&p!==e.ea){hi=p;break;} }
+  const idx=entities.indexOf(e);
+  const newEnts=[];
+  if(!anglesEqual(e.sa,lo)) newEnts.push({type:'arc',cx:e.cx,cy:e.cy,r:e.r,sa:e.sa,ea:lo,id:nextId++});
+  if(!anglesEqual(hi,e.ea)) newEnts.push({type:'arc',cx:e.cx,cy:e.cy,r:e.r,sa:hi,ea:e.ea,id:nextId++});
+  entities.splice(idx,1,...newEnts);
+}
+
+function angleInArc(a,sa,ea){
+  let aa=a, sea=ea;
+  while(aa<sa) aa+=Math.PI*2;
+  while(sea<sa) sea+=Math.PI*2;
+  return aa<=sea+1e-6;
+}
+function anglesEqual(a,b){ return Math.abs(a-b)<1e-6; }
+
+// Intersection geometry
+function intersectEntities(a,b){
+  if(a.type==='line'&&b.type==='line') return iLL(a,b);
+  if(a.type==='line'&&(b.type==='circle'||b.type==='arc')) return iLC(a,b);
+  if((a.type==='circle'||a.type==='arc')&&b.type==='line') return iLC(b,a);
+  if((a.type==='circle'||a.type==='arc')&&(b.type==='circle'||b.type==='arc')) return iCC(a,b);
+  if(a.type==='line'&&b.type==='rect') return rectSides(b).flatMap(s=>iLL(a,s));
+  if((a.type==='circle'||a.type==='arc')&&b.type==='rect') return rectSides(b).flatMap(s=>iLC(s,a));
+  if(a.type==='rect'&&b.type==='line') return rectSides(a).flatMap(s=>iLL(s,b));
+  if(a.type==='rect'&&(b.type==='circle'||b.type==='arc')) return rectSides(a).flatMap(s=>iLC(s,b));
+  return [];
+}
+function iLL(a,b){
+  const dx1=a.x2-a.x1,dy1=a.y2-a.y1,dx2=b.x2-b.x1,dy2=b.y2-b.y1;
+  const d=dx1*dy2-dy1*dx2;
+  if(Math.abs(d)<1e-10) return [];
+  const t=((b.x1-a.x1)*dy2-(b.y1-a.y1)*dx2)/d;
+  const u=((b.x1-a.x1)*dy1-(b.y1-a.y1)*dx1)/d;
+  if(t>=-1e-6&&t<=1+1e-6&&u>=-1e-6&&u<=1+1e-6) return [{x:a.x1+t*dx1,y:a.y1+t*dy1}];
+  return [];
+}
+function iLC(line,circ){
+  const dx=line.x2-line.x1,dy=line.y2-line.y1;
+  const fx=line.x1-circ.cx,fy=line.y1-circ.cy;
+  const A=dx*dx+dy*dy,B=2*(fx*dx+fy*dy),C=fx*fx+fy*fy-circ.r*circ.r;
+  const disc=B*B-4*A*C;
+  if(disc<0) return [];
+  const sq=Math.sqrt(disc),pts=[];
+  for(const s of[-1,1]){
+    const t=(-B+s*sq)/(2*A);
+    if(t>=-1e-6&&t<=1+1e-6) pts.push({x:line.x1+t*dx,y:line.y1+t*dy});
+  }
+  return pts;
+}
+function iCC(a,b){
+  const dx=b.cx-a.cx,dy=b.cy-a.cy,d=Math.hypot(dx,dy);
+  if(d>a.r+b.r+1e-6||d<Math.abs(a.r-b.r)-1e-6||d<1e-10) return [];
+  const l=(a.r*a.r-b.r*b.r+d*d)/(2*d),h=Math.sqrt(Math.max(0,a.r*a.r-l*l));
+  const mx=a.cx+l*dx/d,my=a.cy+l*dy/d;
+  if(h<1e-6) return [{x:mx,y:my}];
+  return [{x:mx+h*dy/d,y:my-h*dx/d},{x:mx-h*dy/d,y:my+h*dx/d}];
+}
+function rectSides(r){
+  return[
+    {type:'line',x1:r.x1,y1:r.y1,x2:r.x2,y2:r.y1},
+    {type:'line',x1:r.x2,y1:r.y1,x2:r.x2,y2:r.y2},
+    {type:'line',x1:r.x2,y1:r.y2,x2:r.x1,y2:r.y2},
+    {type:'line',x1:r.x1,y1:r.y2,x2:r.x1,y2:r.y1},
+  ];
+}
+
 const ICONS={
   line:`<svg class="eico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="2" y1="14" x2="14" y2="2"/></svg>`,
   circle:`<svg class="eico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5"/></svg>`,
@@ -691,7 +863,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){ts={};render();}
   if(e.key==='Delete'||e.key==='Backspace')deleteSelected();
   if(!e.ctrlKey&&!e.metaKey){
-    const map={s:'select',l:'line',c:'circle',a:'arc',r:'rect',d:'dimension',S:'select',L:'line',C:'circle',A:'arc',R:'rect',D:'dimension'};
+    const map={s:'select',l:'line',c:'circle',a:'arc',r:'rect',d:'dimension',t:'trim',S:'select',L:'line',C:'circle',A:'arc',R:'rect',D:'dimension',T:'trim'};
     if(map[e.key])setTool(map[e.key]);
     if(e.key==='f'||e.key==='F')zoomFit();
   }
